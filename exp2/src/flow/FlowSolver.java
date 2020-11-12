@@ -5,6 +5,7 @@ package flow;
 import joeq.Compiler.Quad.ControlFlowGraph;
 import joeq.Compiler.Quad.Quad;
 import joeq.Compiler.Quad.QuadIterator;
+import submit.HandleNullCheck;
 
 import java.util.Collection;
 
@@ -32,8 +33,9 @@ public class FlowSolver implements Flow.Solver {
         Flow.DataflowObject temp = analysis.newTempVar();
         for (Quad P : quads)
             if (P != null) {
-                if (direction)
+                if (direction) {
                     temp.meetWith(analysis.getOut(P));
+                }
                 else
                     temp.meetWith(analysis.getIn(P));
             } else {
@@ -42,6 +44,34 @@ public class FlowSolver implements Flow.Solver {
                 else
                     temp.meetWith(analysis.getExit());
             }
+
+        return temp;
+    }
+    private Flow.DataflowObject computeConfluence(Collection<Quad> quads, boolean direction, Integer q2) {
+        Flow.DataflowObject temp = analysis.newTempVar();
+        for (Quad P : quads)
+            if (P != null) {
+                if (direction) {
+                    if (analysis instanceof HandleNullCheck && ((HandleNullCheck) analysis).getOptLevel() == 2) {
+                        HandleNullCheck handler = (HandleNullCheck) analysis;
+                        if (handler.branchOut.containsKey(q2) && handler.branchOut.get(q2).containsKey(P.getID())) {
+                            temp.meetWith(((HandleNullCheck.VarSet)(analysis.getOut(P))).with(handler.branchOut.get(q2).get(P.getID())));
+                        }else{
+                            temp.meetWith(analysis.getOut(P));
+                        }
+                    }
+                    else
+                        temp.meetWith(analysis.getOut(P));
+                }
+                else
+                    temp.meetWith(analysis.getIn(P));
+            } else {
+                if (direction)
+                    temp.meetWith(analysis.getEntry());
+                else
+                    temp.meetWith(analysis.getExit());
+            }
+
         return temp;
     }
 
@@ -83,7 +113,7 @@ public class FlowSolver implements Flow.Solver {
                 while (iter.hasNext()) // Iterate forward
                 {
                     Quad quad = iter.next();
-                    analysis.setIn(quad, computeConfluence(iter.predecessors1(), true));
+                    analysis.setIn(quad, computeConfluence(iter.predecessors1(), true, quad.getID()));
                     changesMade = changesMade || transfer(quad, true);
 
                     // Check if we need to update the exit
@@ -97,7 +127,7 @@ public class FlowSolver implements Flow.Solver {
                 while (iter.hasPrevious()) // Iterate backward
                 {
                     Quad quad = iter.previous();
-                    analysis.setOut(quad, computeConfluence(iter.successors1(), false));
+                    analysis.setOut(quad, computeConfluence(iter.successors1(), false, quad.getID()));
                     changesMade = changesMade || transfer(quad, false);
 
                     // Check if we need to update the entry
